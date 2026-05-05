@@ -5,134 +5,107 @@ import plotly.express as px
 from scipy.stats import norm
 
 # --- CONFIG & STYLING ---
-st.set_page_config(page_title="Pro Safety Stock Optimizer", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Executive Inventory Optimizer", layout="wide", initial_sidebar_state="expanded")
+
+# Custom CSS for a "Pro" look
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    div[data-testid="stExpander"] { background-color: #ffffff; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_stdio=True)
 
 # --- HELPER FUNCTIONS ---
 def get_z_score(service_level_pct):
     return norm.ppf(service_level_pct / 100.0)
 
-# --- MAIN DASHBOARD HEADER ---
-st.title("🛡️ Strategic Safety Stock & Bias Optimizer")
-st.markdown("""
-Traditional models handle **Volatility** (random noise). This app adds **Bias Analysis** to account for structural forecasting errors—the 'silent killer' of service levels.
-""")
-st.markdown("---")
+# --- HEADER ---
+st.title("🛡️ Strategic Safety Stock Dashboard")
+st.markdown("Comparing five calculation methodologies to optimize working capital vs. service level risk.")
 
 # --- SIDEBAR: GLOBAL INPUTS ---
-st.sidebar.header("⚙️ Global Parameters")
+st.sidebar.header("📋 Simulation Parameters")
 
-with st.sidebar.expander("Demand & Forecast", expanded=True):
-    avg_demand = st.number_input("Avg Daily Demand (Forecasted)", value=100)
+with st.sidebar.expander("1. Demand & Forecast", expanded=True):
+    avg_demand = st.number_input("Avg Daily Demand", value=100)
     std_demand = st.slider("Demand Volatility (Std Dev)", 5, 100, 25)
-    forecast_bias = st.slider("Structural Bias (%)", -30, 30, 10, help="Positive % means you consistently sell MORE than forecasted.")
-    # Calculate RMSE (Root Mean Square Error) as a proxy for volatility + bias
-    # Simplified RMSE = sqrt(std_dev^2 + bias_units^2)
+    forecast_bias = st.slider("Forecast Bias (%)", -30, 30, 10, 
+                             help="Positive % means sales are consistently HIGHER than forecast.")
+    
+    # Calculate RMSE to account for Bias
     bias_units = avg_demand * (forecast_bias / 100)
     rmse = np.sqrt(std_demand**2 + bias_units**2)
 
-with st.sidebar.expander("Supply & Lead Time", expanded=True):
+with st.sidebar.expander("2. Supply & Logistics", expanded=True):
     avg_lead_time = st.number_input("Avg Lead Time (Days)", value=14)
-    std_lead_time = st.slider("Lead Time Volatility (Days)", 0.0, 14.0, 3.0)
-    max_demand = avg_demand + (2 * std_demand) # Dynamic guess for Heissig
+    std_lead_time = st.slider("Lead Time Std Dev (Days)", 0.0, 10.0, 3.0)
+    # Conservative assumptions for the Heissig Method
+    max_demand = avg_demand + (2 * std_demand) 
     max_lead_time = avg_lead_time + (2 * std_lead_time)
 
-with st.sidebar.expander("Strategy & Cost", expanded=True):
+with st.sidebar.expander("3. Financials & Risk", expanded=True):
     service_level = st.slider("Target Service Level (%)", 80.0, 99.9, 95.0, 0.1)
-    unit_cost = st.number_input("Cost per Unit ($)", value=50.0)
+    unit_cost = st.number_input("Unit Cost ($)", value=50.0)
 
 z_score = get_z_score(service_level)
 
-# --- COMPARISON LAYOUT ---
-# We use two rows for better readability
-row1_col1, row1_col2 = st.columns(2)
-row2_col1, row2_col2, row2_col3 = st.columns(3)
+# --- CALCULATIONS ---
+# 1. Variable Demand
+ss_v_dem = z_score * std_demand * np.sqrt(avg_lead_time)
 
-# --- ROW 1: THE BIAS-ADJUSTED MODEL (NEW) ---
-with row1_col1:
-    st.info("### 🌟 Recommended: Forecast Error (RMSE) Model")
-    st.caption("Best for: Accounting for structural Bias + Volatility")
-    # Formula: SS = Z * RMSE * sqrt(L)
-    ss_bias = z_score * rmse * np.sqrt(avg_lead_time)
-    
-    c1, c2 = st.columns(2)
-    c1.metric("Safety Stock (Units)", f"{int(ss_bias):,}")
-    c2.metric("Capital Tied Up", f"${int(ss_bias * unit_cost):,}")
-    
-    st.markdown("""
-    **How it works:** Instead of just using demand 'noise' ($\sigma$), this uses **RMSE**. 
-    If your bias is high, your RMSE increases, automatically padding your safety stock 
-    to cover for the consistent forecast miss.
-    
-    * **Pros:** Only model that protects against a poor forecasting team.
-    * **Cons:** Mathematically masks the bias instead of fixing the root cause.
-    """)
+# 2. Variable Supply
+ss_v_sup = z_score * avg_demand * std_lead_time
 
-with row1_col2:
-    st.success("### 🚀 The Real-World (Combined) Model")
-    st.caption("Best for: Modern, complex supply chains")
-    v_dem = avg_lead_time * (std_demand**2)
-    v_lt = (avg_demand**2) * (std_lead_time**2)
-    ss_real = z_score * np.sqrt(v_dem + v_lt)
-    
-    c1, c2 = st.columns(2)
-    c1.metric("Safety Stock (Units)", f"{int(ss_real):,}")
-    c2.metric("Capital Tied Up", f"${int(ss_real * unit_cost):,}")
-    
-    st.markdown("""
-    **How it works:** This is the gold standard. It calculates the statistical 
-    interaction between demand swings and late deliveries.
-    
-    * **Pros:** Most mathematically efficient use of capital.
-    * **Cons:** Requires clean data for both sales and actual delivery dates.
-    """)
+# 3. Combined Real-World
+v_dem_comp = avg_lead_time * (std_demand ** 2)
+v_sup_comp = (avg_demand ** 2) * (std_lead_time ** 2)
+ss_combined = z_score * np.sqrt(v_dem_comp + v_sup_comp)
 
+# 4. Heissig (Max-Avg)
+ss_heissig = max(0, (max_demand * max_lead_time) - (avg_demand * avg_lead_time))
+
+# 5. RMSE / Bias-Adjusted
+ss_rmse = z_score * rmse * np.sqrt(avg_lead_time)
+
+# --- 5-COLUMN GRID DISPLAY ---
+st.markdown("### 📊 Methodology Comparison")
+cols = st.columns(5)
+
+models = [
+    {"name": "Variable Demand", "ss": ss_v_dem, "formula": r"Z \cdot \sigma_d \cdot \sqrt{L}", "pros": "Simple; focuses on sales noise.", "cons": "Ignores supplier delays."},
+    {"name": "Variable Supply", "ss": ss_v_sup, "formula": r"Z \cdot d_{avg} \cdot \sigma_L", "pros": "Critical for long lead times.", "cons": "Ignores sales fluctuations."},
+    {"name": "Combined Model", "ss": ss_combined, "formula": r"Z \cdot \sqrt{L\sigma_d^2 + d^2\sigma_L^2}", "pros": "Most capital efficient.", "cons": "Requires high data quality."},
+    {"name": "Heissig (Max-Avg)", "ss": ss_heissig, "formula": r"(D_{max} \cdot L_{max}) - (D_{avg} \cdot L_{avg})", "pros": "Extreme safety; no stats.", "cons": "Very expensive; overstocks."},
+    {"name": "Bias-Adjusted", "ss": ss_rmse, "formula": r"Z \cdot RMSE \cdot \sqrt{L}", "pros": "Accounts for poor forecasting.", "cons": "Masks root cause bias issues."}
+]
+
+for i, model in enumerate(models):
+    with cols[i]:
+        st.markdown(f"**{model['name']}**")
+        st.metric("Units", f"{int(model['ss']):,}")
+        st.metric("Capital", f"${int(model['ss'] * unit_cost):,}")
+        with st.expander("Details"):
+            st.latex(model['formula'])
+            st.write(f"**Pros:** {model['pros']}")
+            st.write(f"**Cons:** {model['cons']}")
+
+# --- CHARTING ---
 st.markdown("---")
+st.subheader("Working Capital Impact Analysis")
 
-# --- ROW 2: TRADITIONAL & HEURISTIC ---
-with row2_col1:
-    st.subheader("Variable Demand")
-    ss_1 = z_score * std_demand * np.sqrt(avg_lead_time)
-    st.metric("Units", f"{int(ss_1):,}")
-    st.markdown("**Pros:** Simple to explain.  \n**Cons:** Completely ignores supplier delays.")
+df_plot = pd.DataFrame({
+    "Methodology": [m['name'] for m in models],
+    "Investment Required ($)": [m['ss'] * unit_cost for m in models]
+})
 
-with row2_col2:
-    st.subheader("Variable Supply")
-    ss_2 = z_score * avg_demand * std_lead_time
-    st.metric("Units", f"{int(ss_2):,}")
-    st.markdown("**Pros:** Great for overseas imports.  \n**Cons:** Ignores sales spikes.")
+fig = px.bar(df_plot, x="Methodology", y="Investment Required ($)", 
+             color="Methodology", text_auto='.2s',
+             color_discrete_sequence=px.colors.qualitative.Bold)
 
-with row2_col3:
-    st.subheader("Heissig (Max-Avg)")
-    ss_4 = max(0, (max_demand * max_lead_time) - (avg_demand * avg_lead_time))
-    st.metric("Units", f"{int(ss_4):,}")
-    st.markdown("**Pros:** No stats needed.  \n**Cons:** Extreme overstocking; very expensive.")
-
-# --- VISUALIZATION ---
-st.markdown("---")
-st.subheader("📊 Comparison of Total Investment")
-
-data = {
-    "Model": ["Bias-Adjusted (RMSE)", "Real-World Combined", "Variable Demand", "Variable Supply", "Heissig Method"],
-    "Safety Stock Units": [ss_bias, ss_real, ss_1, ss_2, ss_4],
-    "Capital Required ($)": [ss_bias*unit_cost, ss_real*unit_cost, ss_1*unit_cost, ss_2*unit_cost, ss_4*unit_cost]
-}
-df = pd.DataFrame(data)
-
-fig = px.bar(df, x="Model", y="Capital Required ($)", color="Model", text_auto='.2s',
-             title=f"Capital Impact at {service_level}% Service Level")
+fig.update_layout(showlegend=False, height=450, margin=dict(t=20, b=20, l=20, r=20))
 st.plotly_chart(fig, use_container_width=True)
 
-with st.expander("💡 Management Brief: Why Bias Matters"):
-    st.write(f"""
-    If your **Structural Bias** is **{forecast_bias}%**, your 'Cycle Stock' (the inventory you expect to sell) 
-    is fundamentally wrong. 
-    
-    - If bias is **Positive ({forecast_bias}%)**: You are selling faster than planned. You will dip into your 
-      safety stock almost every cycle, leading to "Phantom Stockouts."
-    - If bias is **Negative**: You are over-forecasting. You will accumulate "Dead Stock" that is 
-      hidden within your safety stock levels.
-    
-    **The RMSE Model** (shown above) is the only one that quantifies this risk for the CFO.
-    """)
-
+# --- EXECUTIVE SUMMARY ---
+st.info(f"**Strategic Insight:** At a **{forecast_bias}% bias**, the **Bias-Adjusted (RMSE)** model suggests an additional investment of **${int((ss_rmse - ss_v_dem) * unit_cost):,}** is required compared to a standard model just to maintain your **{service_level}%** service target.")
 
