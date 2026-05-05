@@ -7,14 +7,23 @@ from scipy.stats import norm
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Executive Inventory Optimizer", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for a "Pro" look
+# --- CUSTOM CSS FIX ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    div[data-testid="stExpander"] { background-color: #ffffff; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stMetric { 
+        background-color: #ffffff; 
+        padding: 15px; 
+        border-radius: 10px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    }
+    div[data-testid="stExpander"] { 
+        background-color: #ffffff; 
+        border: none; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True) # Changed from stdio to html
 
 # --- HELPER FUNCTIONS ---
 def get_z_score(service_level_pct):
